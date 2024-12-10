@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clothes Detection Stream</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>Clothes Detection Stream</h1>
+    <img src="/video_feed" width="640" height="480" />
+    <h2>Detected Objects:</h2>
+    <ul id="detections"></ul>
+
+    <script>
+        const socket = io();
+
+        // Listen for detection results
+        socket.on('detection_results', (data) => {
+            const detectionsList = document.getElementById('detections');
+            detectionsList.innerHTML = ""; // Clear the list
+            data.objects.forEach(obj => {
+                const li = document.createElement('li');
+                li.textContent = `Category: ${obj.category}, Probability: ${obj.probability.toFixed(2)}, Bounding Box: ${obj.bounding_box}`;
+                detectionsList.appendChild(li);
+            });
+        });
+    </script>
+</body>
+</html>
+
+
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clothing Detection</title>
+</head>
+<body>
+    <h1>Real-Time Clothing Detection</h1>
+    <img src="{{ url_for('video_feed') }}" width="640" height="480" />
+</body>
+</html> -->
