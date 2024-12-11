@@ -171,16 +171,16 @@ def gen_frames():
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
         # Run object detection
-        detected_objects = detect_objects(frame_rgb, detector)
-        results = [
-            {
-                "category": category[obj.category],
-                "probability": float(obj.prob),
-                "bounding_box": [obj.x, obj.y, obj.w, obj.h]
-            }
-            for obj in detected_objects
-        ]
-        socketio.emit('detection_results', {'objects': results})
+        # detected_objects = detect_objects(frame_rgb, detector)
+        # results = [
+        #     {
+        #         "category": category[obj.category],
+        #         "probability": float(obj.prob),
+        #         "bounding_box": [obj.x, obj.y, obj.w, obj.h]
+        #     }
+        #     for obj in detected_objects
+        # ]
+        # socketio.emit('detection_results', {'objects': results})
 
 @app.route('/')
 def index():
