@@ -62,12 +62,12 @@ def get_base_parser(
         description=description,
         conflict_handler='resolve',  # allow to overwrite default argument
     )
-    # parser.add_argument(
-    #     '-i', '--input', nargs='*', metavar='IMAGE/VIDEO', default=default_input,
-    #     help=('The default (model-dependent) input data (image / video) path. '
-    #           'If a directory name is specified, the model will be run for '
-    #           'the files inside. File type is specified by --ftype argument')
-    # )
+    parser.add_argument(
+        '-i', '--input', nargs='*', metavar='IMAGE/VIDEO', default=default_input,
+        help=('The default (model-dependent) input data (image / video) path. '
+              'If a directory name is specified, the model will be run for '
+              'the files inside. File type is specified by --ftype argument')
+    )
     parser.add_argument(
         '-v', '--video', metavar='VIDEO', default=None,
         help=('You can convert the input video by entering style image.'
@@ -78,11 +78,11 @@ def get_base_parser(
         '-s', '--savepath', metavar='SAVE_PATH', default=default_save,
         help='Save path for the output (image / video / text).'
     )
-    # parser.add_argument(
-    #     '-b', '--benchmark', action='store_true',
-    #     help=('Running the inference on the same input 5 times to measure '
-    #           'execution performance. (Cannot be used in video mode)')
-    # )
+    parser.add_argument(
+        '-b', '--benchmark', action='store_true',
+        help=('Running the inference on the same input 5 times to measure '
+              'execution performance. (Cannot be used in video mode)')
+    )
     default_env_id = ailia.get_gpu_environment_id() if AILIA_EXIST else 0
     if AILIA_EXIST:
         if not fp16_support:

@@ -1,28 +1,25 @@
-# Imports retained as per your setup
 import sys
-import subprocess
 import time
 from collections import OrderedDict
-from flask import Flask, Response, render_template
-from flask_socketio import SocketIO, emit
+
 import numpy as np
 import cv2
 from PIL import Image
-import ailia
-import threading
 
-# Original utility imports
+import ailia
+
+# import original modules
 sys.path.append('./util')
 from arg_utils import get_base_parser, update_parser, get_savepath  # noqa: E402
 from model_utils import check_and_download_models  # noqa: E402
 from detector_utils import plot_results, load_image, write_predictions  # noqa: E402
-from webcamera_utils import get_capture, get_writer, calc_adjust_fsize  # noqa: E402
-from imutils.video import FPS, WebcamVideoStream, VideoStream # noqa: E402
-import imutils
+from webcamera_utils import get_capture, get_writer,\
+    calc_adjust_fsize  # noqa: E402
 
-# Logger setup
-from logging import getLogger  # noqa: E402
+# logger
+from logging import getLogger   # noqa: E402
 logger = getLogger(__name__)
+
 
 # ======================
 # Parameters
@@ -56,7 +53,10 @@ THRESHOLD = 0.39
 IOU = 0.4
 DETECTION_WIDTH = 416
 
-# Argument parser
+
+# ======================
+# Arguemnt Parser Config
+# ======================
 parser = get_base_parser(
     'Clothing detection model', IMAGE_PATH, SAVE_IMAGE_PATH
 )
@@ -69,12 +69,7 @@ parser.add_argument(
 parser.add_argument(
     '-dw', '--detection_width',
     default=DETECTION_WIDTH,
-    help='The detection width and height for yolo.'
-)
-parser.add_argument(
-    '-th', '--threshold', type=float,
-    default=THRESHOLD,
-    help='The threshold for detection.'
+    help='The detection width and height for yolo. (default: 416)'
 )
 parser.add_argument(
     '-w', '--write_json',
@@ -86,12 +81,19 @@ args = update_parser(parser)
 weight_path, model_path = DATASETS_MODEL_PATH[args.dataset]
 category = DATASETS_CATEGORY[args.dataset]
 
+
+# ======================
+# Secondaty Functions
+# ======================
+
 def letterbox_image(image, size):
+    '''resize image with unchanged aspect ratio using padding'''
     iw, ih = image.size
     w, h = size
     scale = min(w / iw, h / ih)
     nw = int(iw * scale)
     nh = int(ih * scale)
+
     image = image.resize((nw, nh), Image.BICUBIC)
     new_image = Image.new('RGB', size, (128, 128, 128))
     new_image.paste(image, ((w - nw) // 2, (h - nh) // 2))
@@ -110,10 +112,12 @@ def preprocess(img, resize):
 
 def post_processing(img_shape, all_boxes, all_scores, indices):
     indices = indices.astype(int)
+
     bboxes = []
     for idx_ in indices[0]:
         cls_ind = idx_[1]
         score = all_scores[tuple(idx_)]
+
         idx_1 = (idx_[0], idx_[2])
         box = all_boxes[idx_1]
         y, x, y2, x2 = box
@@ -131,92 +135,84 @@ def post_processing(img_shape, all_boxes, all_scores, indices):
     return bboxes
 
 
+# ======================
+# Main functions
+# ======================
+
 def detect_objects(img, detector):
     img_shape = img.shape[:2]
+
+    # initial preprocesses
     img = preprocess(img, resize=args.detection_width)
+
+    # feedforward
     all_boxes, all_scores, indices = detector.predict({
         'input_1': img,
         'image_shape': np.array([img_shape], np.float32),
-        'layer.score_threshold': np.array([args.threshold if args.threshold else THRESHOLD], np.float32),
+        'layer.score_threshold': np.array([THRESHOLD], np.float32),
         'iou_threshold': np.array([IOU], np.float32),
     })
+
+    # post processes
     detect_object = post_processing(img_shape, all_boxes, all_scores, indices)
+
     return detect_object
 
-# ======================
-# Flask, Websockets, and Detection Setup
-# ======================
 
-app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")  # Enable websockets
-vs = None
-detector = None
+def recognize_from_image(filename, detector):
+    # prepare input data
+    img = load_image(filename)
+    logger.debug(f'input image shape: {img.shape}')
 
-def gen_frames():
-    global vs, detector
-    while True:
-        frame = vs.read()
-        if frame is None:
-            break
+    x = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
 
-        frame = imutils.resize(frame, width=640)
-        # result_frame = plot_results(detected_objects, frame, category)
+    # inference
+    logger.info('Start inference...')
+    if args.benchmark:
+        logger.info('BENCHMARK mode')
+        for i in range(5):
+            start = int(round(time.time() * 1000))
+            detect_object = detect_objects(x, detector)
+            end = int(round(time.time() * 1000))
+            logger.info(f'\tailia processing time {end - start} ms')
+    else:
+        detect_object = detect_objects(x, detector)
 
-        # Encode the frame as JPEG
-        _, buffer = cv2.imencode('.jpeg', frame)
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n\r\n')
+    # plot result
+    res_img = plot_results(detect_object, img, category)
+    savepath = get_savepath(args.savepath, filename)
+    logger.info(f'saved at : {savepath}')
+    cv2.imwrite(savepath, res_img)
 
-        # Send detection results via websockets
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    # write prediction
+    if args.write_json:
+        json_file = '%s.json' % savepath.rsplit('.', 1)[0]
+        write_predictions(json_file, detect_object, img, category=category, file_type='json')
 
-        # Run object detection
-        # detected_objects = detect_objects(frame_rgb, detector)
-        # results = [
-        #     {
-        #         "category": category[obj.category],
-        #         "probability": float(obj.prob),
-        #         "bounding_box": [obj.x, obj.y, obj.w, obj.h]
-        #     }
-        #     for obj in detected_objects
-        # ]
-        # socketio.emit('detection_results', {'objects': results})
 
-@app.route('/')
-def index():
-    return render_template('index.html')  # Render the main page (index.html)
-
-@app.route('/video_feed')
-def video_feed():
-    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
-
-@socketio.on('connect')
-def on_connect():
-    logger.info('Client connected via websocket.')
-
-@socketio.on('disconnect')
-def on_disconnect():
-    logger.info('Client disconnected.')
 
 def main():
-    global detector, vs
-    # Check and download model files
+    # model files check and download
     check_and_download_models(weight_path, model_path, REMOTE_PATH)
 
-    # Initialize the detector
+    # initialize
     detector = ailia.Net(model_path, weight_path, env_id=args.env_id)
-    detector.set_input_shape((1, 3, args.detection_width, args.detection_width))
+    id_image_shape = detector.find_blob_index_by_name("image_shape")
+    detector.set_input_shape(
+        (1, 3, args.detection_width, args.detection_width)
+    )
+    detector.set_input_blob_shape((1, 2), id_image_shape)
 
-    # Start the video stream
-    vs = VideoStream(src=0).start()
+    # image mode
+    # input image loop
+    for image_path in args.input:
+        # prepare input data
+        logger.info(image_path)
+        recognize_from_image(image_path, detector)
 
-    # Start Flask and SocketIO server in a separate thread
-    threading.Thread(target=lambda: socketio.run(app, host="localhost", port=5000), daemon=True).start()
-    logger.info('Flask and WebSocket server started, waiting for connections...')
+    logger.info('Script finished successfully.')
 
-    # Main loop for FPS tracking
-    while True:
-        time.sleep(1)
 
 if __name__ == '__main__':
     main()
+

@@ -1,30 +1,41 @@
+
+# Imports retained as per your setup
 import sys
 import subprocess
 import time
 from collections import OrderedDict
+from flask import Flask, Response, render_template
+from flask_socketio import SocketIO, emit
 import numpy as np
 import cv2
 from PIL import Image
 import ailia
+import threading
 
-# Import original modules
+# Original utility imports
 sys.path.append('./util')
-from arg_utils import get_base_parser, update_parser, get_savepath
-from model_utils import check_and_download_models
-from detector_utils import plot_results, load_image, write_predictions
+from arg_utils import get_base_parser, update_parser, get_savepath  # noqa: E402
+from model_utils import check_and_download_models  # noqa: E402
+from detector_utils import plot_results, load_image, write_predictions  # noqa: E402
 from webcamera_utils import get_capture, get_writer, calc_adjust_fsize  # noqa: E402
-from imutils.video import FPS
+from imutils.video import FPS, WebcamVideoStream, VideoStream # noqa: E402
 import imutils
 
-# Logger
-from logging import getLogger
+# Logger setup
+from logging import getLogger  # noqa: E402
 logger = getLogger(__name__)
 
+# ======================
 # Parameters
+# ======================
+
 REMOTE_PATH = 'https://storage.googleapis.com/ailia-models/clothing-detection/'
 
 DATASETS_MODEL_PATH = OrderedDict([
-    ('modanet', ['yolov3-modanet.opt.onnx', 'yolov3-modanet.opt.onnx.prototxt']),
+    (
+        'modanet',
+        ['yolov3-modanet.opt.onnx', 'yolov3-modanet.opt.onnx.prototxt']
+    ),
     ('df2', ['yolov3-df2.opt.onnx', 'yolov3-df2.opt.onnx.prototxt'])
 ])
 
@@ -46,7 +57,7 @@ THRESHOLD = 0.39
 IOU = 0.4
 DETECTION_WIDTH = 416
 
-# Argument Parser
+# Argument parser
 parser = get_base_parser(
     'Clothing detection model', IMAGE_PATH, SAVE_IMAGE_PATH
 )
@@ -76,16 +87,12 @@ args = update_parser(parser)
 weight_path, model_path = DATASETS_MODEL_PATH[args.dataset]
 category = DATASETS_CATEGORY[args.dataset]
 
-
-# Secondary Functions
-
 def letterbox_image(image, size):
     iw, ih = image.size
     w, h = size
     scale = min(w / iw, h / ih)
     nw = int(iw * scale)
     nh = int(ih * scale)
-
     image = image.resize((nw, nh), Image.BICUBIC)
     new_image = Image.new('RGB', size, (128, 128, 128))
     new_image.paste(image, ((w - nw) // 2, (h - nh) // 2))
@@ -97,19 +104,17 @@ def preprocess(img, resize):
     boxed_image = letterbox_image(image, (resize, resize))
     image_data = np.array(boxed_image, dtype='float32')
     image_data /= 255.
-    image_data = np.expand_dims(image_data, 0)
+    image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
     image_data = np.transpose(image_data, [0, 3, 1, 2])
     return image_data
 
 
 def post_processing(img_shape, all_boxes, all_scores, indices):
     indices = indices.astype(int)
-
     bboxes = []
     for idx_ in indices[0]:
         cls_ind = idx_[1]
         score = all_scores[tuple(idx_)]
-
         idx_1 = (idx_[0], idx_[2])
         box = all_boxes[idx_1]
         y, x, y2, x2 = box
@@ -127,80 +132,92 @@ def post_processing(img_shape, all_boxes, all_scores, indices):
     return bboxes
 
 
-# Main functions
-
 def detect_objects(img, detector):
     img_shape = img.shape[:2]
     img = preprocess(img, resize=args.detection_width)
-
     all_boxes, all_scores, indices = detector.predict({
         'input_1': img,
         'image_shape': np.array([img_shape], np.float32),
         'layer.score_threshold': np.array([args.threshold if args.threshold else THRESHOLD], np.float32),
         'iou_threshold': np.array([IOU], np.float32),
     })
-
     detect_object = post_processing(img_shape, all_boxes, all_scores, indices)
-
     return detect_object
 
+# ======================
+# Flask, Websockets, and Detection Setup
+# ======================
 
-def recognize_from_video_stream(video_url, detector):
-    # Open the webcam stream using OpenCV (motion streaming URL)
-    vs = cv2.VideoCapture(video_url)
-    fps = FPS().start()
+app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*")  # Enable websockets
+vs = None
+detector = None
 
-    frame_shown = False
+def gen_frames():
+    global vs, detector
     while True:
-        ret, frame = vs.read()
-        if not ret:
-            print("Failed to grab frame.")
+        frame = vs.read()
+        if frame is None:
             break
+
         frame = imutils.resize(frame, width=640)
-        if (cv2.waitKey(1) & 0xFF == ord('q')):
-            break
-        if frame_shown and cv2.getWindowProperty('frame', cv2.WND_PROP_VISIBLE) == 0:
-            break
+        # result_frame = plot_results(detected_objects, frame, category)
 
-        x = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        detect_object = detect_objects(x, detector)
-        res_img = plot_results(detect_object, frame, category)
-        cv2.imshow('frame', res_img)
-        frame_shown = True
+        # Encode the frame as JPEG
+        _, buffer = cv2.imencode('.jpeg', frame)
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n\r\n')
 
-        fps.update()
+        # Send detection results via websockets
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-    fps.stop()
-    print("[INFO] elasped time: {:.2f}".format(fps.elapsed()))
-    print("[INFO] approx. FPS: {:.2f}".format(fps.fps()))
+        # Run object detection
+        # detected_objects = detect_objects(frame_rgb, detector)
+        # results = [
+        #     {
+        #         "category": category[obj.category],
+        #         "probability": float(obj.prob),
+        #         "bounding_box": [obj.x, obj.y, obj.w, obj.h]
+        #     }
+        #     for obj in detected_objects
+        # ]
+        # socketio.emit('detection_results', {'objects': results})
 
-    cv2.destroyAllWindows()
-    vs.release()
+@app.route('/')
+def index():
+    return render_template('index.html')  # Render the main page (index.html)
 
-def start_motion_service():
-    # Start the motion service in the background
-    subprocess.Popen(['sudo', 'motion'])
+@app.route('/video_feed')
+def video_feed():
+    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@socketio.on('connect')
+def on_connect():
+    logger.info('Client connected via websocket.')
+
+@socketio.on('disconnect')
+def on_disconnect():
+    logger.info('Client disconnected.')
 
 def main():
-    start_motion_service()
-    # Model files check and download
+    global detector, vs
+    # Check and download model files
     check_and_download_models(weight_path, model_path, REMOTE_PATH)
 
     # Initialize the detector
     detector = ailia.Net(model_path, weight_path, env_id=args.env_id)
-    id_image_shape = detector.find_blob_index_by_name("image_shape")
     detector.set_input_shape((1, 3, args.detection_width, args.detection_width))
-    detector.set_input_blob_shape((1, 2), id_image_shape)
 
-    # Set video stream URL (motion service)
-    video_url = f"{args.video}"  # Replace with your Raspberry Pi IP
+    # Start the video stream
+    vs = VideoStream(src=0).start()
 
-    if args.video is not None:
-        # Recognize from video stream
-        recognize_from_video_stream(video_url, detector)
+    # Start Flask and SocketIO server in a separate thread
+    threading.Thread(target=lambda: socketio.run(app, host="localhost", port=5000), daemon=True).start()
+    logger.info('Flask and WebSocket server started, waiting for connections...')
 
-    logger.info('Script finished successfully.')
-
+    # Main loop for FPS tracking
+    while True:
+        time.sleep(1)
 
 if __name__ == '__main__':
     main()

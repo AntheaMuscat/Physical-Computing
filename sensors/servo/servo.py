@@ -1,8 +1,27 @@
+# from gpiozero import Servo
+# from time import sleep
+
+# servo_pin = 26
+# servo = Servo(servo_pin)
+
+# try:
+#     while True:
+#         servo.value = 0
+#         print("Servo at 0 degrees")
+#         sleep(5)
+
+#         servo.value = 1
+#         print("Servo at 180 degrees")
+#         sleep(5)
+# except KeyboardInterrupt:
+#     servo.close()
+#     print("Servo Stopped")
+
 import time
 import pigpio
 
 # Pin configuration
-servo_pin = 18  # GPIO17 (physical pin 11)
+servo_pin = 26  # GPIO26 (physical pin 37)
 
 # Initialize pigpio library
 pi = pigpio.pi()
