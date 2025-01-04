@@ -93,17 +93,16 @@ category = DATASETS_CATEGORY[args.dataset]
 # ======================
 
 def letterbox_image(image, size):
-    """
-    Resize an image while maintaining its aspect ratio using padding.
+    '''
+    Resize image with unchanged aspect ratio using padding and apply normalization.
 
     Parameters:
     image (PIL.Image.Image): The input image to be resized.
     size (tuple): The desired output size as a tuple (width, height).
 
     Returns:
-    PIL.Image.Image: The resized image with padding to fit the desired size.
-    """
-    '''resize image with unchanged aspect ratio using padding'''
+    PIL.Image.Image: The resized image with padding and normalized color.
+    '''
     iw, ih = image.size
     w, h = size
     scale = min(w / iw, h / ih)
@@ -113,27 +112,32 @@ def letterbox_image(image, size):
     image = image.resize((nw, nh), Image.BICUBIC)
     new_image = Image.new('RGB', size, (128, 128, 128))
     new_image.paste(image, ((w - nw) // 2, (h - nh) // 2))
+
+    # Normalize the color channels
+    image_np = np.array(new_image, dtype='float32') / 255.0
+    image_np = np.clip(image_np, 0, 1)  # Clamp the values between 0 and 1
+    new_image = Image.fromarray((image_np * 255).astype(np.uint8))
+
     return new_image
 
 
+
+
+
+
 def preprocess(img, resize):
-    """
-    Preprocess the input image for model prediction.
-
-    Args:
-        img (numpy.ndarray): The input image array.
-        resize (int): The size to which the image should be resized.
-
-    Returns:
-        numpy.ndarray: The preprocessed image data ready for model input.
-    """
     image = Image.fromarray(img)
+    print(f"Original Image Size: {image.size}")
+    
     boxed_image = letterbox_image(image, (resize, resize))
+    print(f"Processed Image Size: {boxed_image.size}")
+    
     image_data = np.array(boxed_image, dtype='float32')
-    image_data /= 255.
+    image_data /= 255.0
     image_data = np.expand_dims(image_data, 0)  # Add batch dimension.
     image_data = np.transpose(image_data, [0, 3, 1, 2])
     return image_data
+
 
 
 def post_processing(img_shape, all_boxes, all_scores, indices):
