@@ -8,6 +8,10 @@ import os
 import time
 import Adafruit_DHT
 
+import board
+import neopixel
+from datetime import datetime
+
 # Import necessary components
 from gpiozero import MotionSensor
 import gpiozero as gpio
@@ -110,8 +114,9 @@ class SimpleCameraApp:
             self.img_label.config(image=img_tk)
             self.img_label.image = img_tk
         else:
-            print("Error: Unable to capture frame.")
+            print("Error: Unable to capture frame.")        
         self.root.after(10, self.update_video_feed)  # Refresh video feed
+
 
     def start_capture_timer(self):
         self.add_button.config(state=tk.DISABLED)
@@ -174,16 +179,27 @@ class SimpleCameraApp:
     def __del__(self):
         self.cap.release()  # Release the video capture when app is closed
 
+    
+# if __name__ == "__main__":
+#     root = tk.Tk()
+#     app = SimpleCameraApp(root)
+#     root.mainloop()
+
+
     def update_humidity_display(self):
         humidity, temperature = Adafruit_DHT.read_retry(sensor, DHTPin)
         if humidity is not None:
             # humidity = round(humidity)
             # humidity_str = str(humidity)
             self.humidity_label.config(text=f"Humidity: {humidity:.2f}%")
+
+            if humidity >= 75:
+                self.humidity_label.config(text=f"Humidity: {humidity:.2f}%\n High Humidity please check clothes", fg="red")
         else:
             self.humidity_label.config(text="Failed to retrieve humidity data.")
 
-        self.root.after(10000, self.update_humidity_display)  # Update every 2 seconds
+        time.sleep(5)
+        self.root.after(600000, self.update_humidity_display)  # Update every 2 seconds
 
 
 
@@ -191,6 +207,13 @@ class MotionHandler:
     def __init__(self):
         self.motion_count = 0
         self.running = True  # Control flag to stop the loops
+
+        # Initialize the LED strip
+        self.pixels1 = neopixel.NeoPixel(board.D18, 43, brightness=1)
+
+        # Constants for time ranges
+        self.DAY_START = 8  # 8:00 AM
+        self.DAY_END = 17   # 5:00 PM
 
     def start_motion_sensor(self):
         global motionDetectedCounter, noMotionDetectedCounter
@@ -229,6 +252,15 @@ class MotionHandler:
                 print("Failed to retrieve data from humidity sensor.")
             time.sleep(2)
 
+    def start_leds(self):
+        
+
+        time_now = datetime.now().hour
+        if self.DAY_START <= time_now < self.DAY_END:  # Daytime
+            self.pixels1.fill((255, 255, 255))  # Bright White
+        else:  # Nighttime
+            self.pixels1.fill((196,147,39))  # Warm White
+
     def open_camera_app(self):
         global root
         root = tk.Tk()
@@ -236,7 +268,8 @@ class MotionHandler:
 
         # Start servo and humidity monitor in separate threads
         Thread(target=self.start_servo).start()
-        Thread(target=self.start_humidity_monitor).start()
+        # Thread(target=self.start_humidity_monitor).start()
+        Thread(target=self.start_leds).start()
         
         root.protocol("WM_DELETE_WINDOW", self.on_app_close)
         root.mainloop()
@@ -245,6 +278,7 @@ class MotionHandler:
         global root, pi 
         self.running = False # Set the running flag to False 
         # Safely destroy the root window in the main thread 
+        self.pixels1.fill((0,0,0))
         root.after(0, root.destroy) # Ensure this is in the main thread 
         pi.stop() # Stop the pigpio connection
         quit()
@@ -253,9 +287,13 @@ if __name__ == "__main__":
     try:
         motion_handler = MotionHandler()
         motion_thread = Thread(target=motion_handler.start_motion_sensor)
+        motion_handler.pixels1.fill((0,0,0))
         motion_thread.start()
 
     except KeyboardInterrupt:
         print("Program interrupted. Exiting...")
         # Perform cleanup actions if necessary
         motion_handler.on_app_close()
+        quit()
+
+
