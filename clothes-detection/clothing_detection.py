@@ -6,6 +6,7 @@ import cv2
 from PIL import Image
 from sklearn.metrics import pairwise
 import ailia
+import os
 
 from config import insert_into_database
 
@@ -237,7 +238,7 @@ def recognize_from_image(filename, detector):
             print(f"Detected: {item_name}, Color: {color_name}")
 
             # Save cropped image
-            cropped_image_path = f"cropped_{item_name}_{color_name}.png"
+            cropped_image_path = os.path.join("Images", f"cropped_{item_name}_{color_name}.png")
             cv2.imwrite(cropped_image_path, bbox_img)
 
             # Insert into the database, including the image

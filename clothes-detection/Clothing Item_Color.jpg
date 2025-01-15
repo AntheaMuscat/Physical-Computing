@@ -1,1 +1,0 @@
-captured_image.jpg

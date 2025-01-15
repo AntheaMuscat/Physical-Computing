@@ -236,8 +236,10 @@ class MotionHandler:
         while self.running:
             pi.set_servo_pulsewidth(servo_pin, 500)  # Move to 0 degrees
             time.sleep(1)  # Hold position for a while
-            pi.set_servo_pulsewidth(servo_pin, 2500)  # Move to 180 degrees
+            pi.set_servo_pulsewidth(servo_pin, 2450)  # Move to 180 degrees
             time.sleep(1)
+            pi.set_servo_pulsewidth(servo_pin, 500)  # Move to 0 degrees
+            time.sleep(1) 
 
             time.sleep(5)  # Wait for 5 minutes before pressing again
 
