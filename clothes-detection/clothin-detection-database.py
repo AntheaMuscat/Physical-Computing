@@ -17,6 +17,8 @@ from gpiozero import MotionSensor
 import gpiozero as gpio
 from threading import Thread
 
+from gpiozero import Button as GPIOButton
+
 # Motion Sensor
 pir = MotionSensor(4)
 motionDetectedCounter = 0
@@ -28,6 +30,8 @@ import pigpio
 servo_pin = 26
 pi = pigpio.pi()
 
+push_button = GPIOButton(21)
+
 
 if not pi.connected:
     print("Failed to connect to pigpio daemon!")
@@ -37,6 +41,11 @@ if not pi.connected:
 DHTPin = 17
 sensor = Adafruit_DHT.DHT11
 
+# NeoPixel LED Setup
+PIXEL_PIN = board.D18
+NUM_PIXELS = 43
+pixels = neopixel.NeoPixel(PIXEL_PIN, NUM_PIXELS, brightness=1.0, auto_write=True)
+
 class SimpleCameraApp:
     def __init__(self, root):
         self.root = root
@@ -44,6 +53,7 @@ class SimpleCameraApp:
 
         # Set up video capture
         self.cap = cv2.VideoCapture(0)
+        self.led_brightness = 1
 
         # Check if the camera is opened successfully
         if not self.cap.isOpened():
@@ -51,25 +61,111 @@ class SimpleCameraApp:
             self.cap.release()
             return
 
-        # Label for displaying the video feed
-        self.img_label = tk.Label(root)
+    
+        # Create the main container frame
+        main_frame = tk.Frame(root)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Top part: Left side for LEDs and Right side for camera with humidity label
+        top_frame = tk.Frame(main_frame)
+        top_frame.pack(fill=tk.X,expand=True, padx=500, pady=10)
+
+        
+
+
+
+        # Left frame for LEDs buttons and LED mode label
+        left_frame = tk.Frame(top_frame)
+        left_frame.pack(side=tk.LEFT, padx=10, pady=10)
+
+        # LED mode label (Auto updates based on time)
+        self.led_mode_label = Label(left_frame, font=("Arial", 14),  width=15, anchor="w")
+        self.led_mode_label.pack(pady=5)
+
+         # Day/Night Toggle Buttons
+        self.day_mode_button = Button(root, text="Day Mode", command=self.set_day_mode)
+        self.day_mode_button.pack(side=tk.LEFT, padx=10)
+
+        self.night_mode_button = Button(root, text="Night Mode", command=self.set_night_mode)
+        self.night_mode_button.pack(side=tk.LEFT, padx=10)
+
+        
+
+
+        # Buttons to change LED colors
+        self.day_mode_button = Button(left_frame, text="Day Mode", command=self.set_day_mode, bg="white")
+        self.day_mode_button.pack(pady=5)
+
+        self.night_mode_button = Button(left_frame, text="Night Mode", command=self.set_night_mode, bg="#C49327", fg="white")
+        self.night_mode_button.pack(pady=5)
+
+        self.red_button = Button(left_frame, text="Red", command=self.set_red, bg="red", fg="white")
+        self.red_button.pack(pady=5)
+
+        self.blue_button = Button(left_frame, text="Blue", command=self.set_blue, bg="blue", fg="white")
+        self.blue_button.pack(pady=5)
+
+        self.green_button = Button(left_frame, text="Green", command=self.set_green, bg="green",fg="white")
+        self.green_button.pack(pady=5)
+
+        self.yellow_button = Button(left_frame, text="Yellow", command=self.set_yellow, bg="yellow")
+        self.yellow_button.pack(pady=5)
+
+        self.pink_button = Button(left_frame, text="Pink", command=self.set_pink, bg="pink")
+        self.pink_button.pack(pady=5)
+
+        self.purple_button = Button(left_frame, text="Purple", command=self.set_purple, bg="purple", fg="white")
+        self.purple_button.pack(pady=5)
+
+        # Add brightness control slider
+        self.brightness_label = Label(left_frame, text="Brightness", font=("Arial", 12))
+        self.brightness_label.pack(pady=5)
+
+        style = ttk.Style()
+
+        # Configure the style for the scale (slider)
+        style.configure("TScale",
+                sliderlength=20,      # Length of the slider
+                thickness=12,         # Thickness of the scale
+                background="#3498db", # Slider color
+                troughcolor="#ecf0f1", # Track color
+                foreground = "#113038"
+               )
+
+        style.map("TScale",
+          background=[("active", "#3498db")]      # Set hover foreground color (handle)
+)
+
+
+        self.brightness_slider = ttk.Scale(left_frame, from_=0, to=1, orient="horizontal", command=self.adjust_brightness,)
+        self.brightness_slider.set(self.led_brightness)  # Set the default brightness to 1
+        self.brightness_slider.pack(pady=5)
+
+        # Right frame for camera feed and humidity label
+        right_frame = tk.Frame(top_frame)
+        right_frame.pack(side=tk.LEFT, padx=10, pady=10)
+
+        # Camera feed
+        self.img_label = tk.Label(right_frame)
         self.img_label.pack()
 
-        self.humidity_label = Label(root, text="Humidity: -", font=("Arial", 14))
-        self.humidity_label.pack()
+        # Humidity label below camera feed
+        self.humidity_label = Label(right_frame, text="Humidity: -", font=("Arial", 14))
+        self.humidity_label.pack(pady=5)
 
-        # Buttons
-        self.add_button = Button(root, text="Add Item", command=self.start_capture_timer)
-        self.add_button.pack()
-        self.remove_button = Button(root, text="Remove Selected", command=self.remove_selected_item)
-        self.remove_button.pack()
+
+        # Link the physical button to the start_capture_timer method
+        push_button.when_pressed = self.start_capture_timer
+ 
 
         # Start video feed update
         self.update_video_feed()
         self.update_humidity_display()
+        self.update_led_mode()
 
-        table_frame = tk.Frame(root)
-        table_frame.pack(fill=tk.BOTH, expand=True)
+        # Bottom part: Treeview
+        table_frame = tk.Frame(main_frame)
+        table_frame.pack(fill=tk.BOTH, expand=True, pady=10)
 
         v_scrollbar = ttk.Scrollbar(table_frame, orient=tk.VERTICAL)
         v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -104,6 +200,11 @@ class SimpleCameraApp:
 
         # Populate the table
         self.update_data_table()
+
+    def adjust_brightness(self, value):
+        self.led_brightness = float(value)
+        pixels.brightness = self.led_brightness  # Update the NeoPixel brightness
+        pixels.show()  # Apply the brightness adjustment
 
     def update_video_feed(self):
         ret, frame = self.cap.read()
@@ -176,6 +277,55 @@ class SimpleCameraApp:
         else:
             print("No item selected to remove.")
 
+    def update_led_mode(self):
+        time_now = datetime.now().hour
+        if 8 <= time_now < 17:  # Daytime
+            self.led_mode_label.config(text="LED Mode: Day")
+        else:  # Nighttime
+            self.led_mode_label.config(text="LED Mode: Night")
+
+
+    # Button commands for changing LED colors
+    def set_day_mode(self):
+        self.led_mode_label.config(text="LED Mode: Day")
+        pixels.fill((255, 255, 255))  # Bright White
+        pixels.show()
+
+    def set_night_mode(self):
+        self.led_mode_label.config(text="LED Mode: Night")
+        pixels.fill((196, 147, 39))  # Warm White
+        pixels.show()
+
+    def set_red(self):
+        self.led_mode_label.config(text="LED Mode: Red")
+        pixels.fill((255, 0, 0))  # Red
+        pixels.show()
+
+    def set_blue(self):
+        self.led_mode_label.config(text="LED Mode: Blue")
+        pixels.fill((0, 0, 255))  # Blue
+        pixels.show()
+
+    def set_green(self):
+        self.led_mode_label.config(text="LED Mode: Green")
+        pixels.fill((0, 255, 0))  # Green
+        pixels.show()
+
+    def set_yellow(self):
+        self.led_mode_label.config(text="LED Mode: Yellow")
+        pixels.fill((255, 255, 0))  # Yellow
+        pixels.show()
+
+    def set_pink(self):
+        self.led_mode_label.config(text="LED Mode: Pink")
+        pixels.fill((255, 20, 147))  # Pink
+        pixels.show()
+
+    def set_purple(self):
+        self.led_mode_label.config(text="LED Mode: Purple")
+        pixels.fill((128, 0, 128))  # Purple
+        pixels.show()
+
     def __del__(self):
         self.cap.release()  # Release the video capture when app is closed
 
@@ -193,7 +343,7 @@ class SimpleCameraApp:
             # humidity_str = str(humidity)
             self.humidity_label.config(text=f"Humidity: {humidity:.2f}%")
 
-            if humidity >= 75:
+            if humidity >= 60:
                 self.humidity_label.config(text=f"Humidity: {humidity:.2f}%\n High Humidity please check clothes", fg="red")
         else:
             self.humidity_label.config(text="Failed to retrieve humidity data.")
@@ -209,7 +359,7 @@ class MotionHandler:
         self.running = True  # Control flag to stop the loops
 
         # Initialize the LED strip
-        self.pixels1 = neopixel.NeoPixel(board.D18, 43, brightness=1)
+        self.pixels1 = pixels  # NeoPixel object for motion handling
 
         # Constants for time ranges
         self.DAY_START = 8  # 8:00 AM
@@ -291,6 +441,7 @@ if __name__ == "__main__":
         motion_thread = Thread(target=motion_handler.start_motion_sensor)
         motion_handler.pixels1.fill((0,0,0))
         motion_thread.start()
+        
 
     except KeyboardInterrupt:
         print("Program interrupted. Exiting...")

@@ -7,7 +7,7 @@ from PIL import Image
 from sklearn.metrics import pairwise
 import ailia
 import os
-
+from datetime import datetime
 from config import insert_into_database
 
 # import original modules
@@ -53,6 +53,7 @@ IOU = 0.4
 DETECTION_WIDTH = 416
 
 # Define predefined colors for matching
+
 COLOR_RANGES = {
     "Red": [(0, 100, 100), (10, 255, 255)],
     "Green": [(35, 100, 100), (85, 255, 255)],
@@ -165,6 +166,7 @@ def get_closest_color_name(hsv_color):
             closest_color = color_name
     return closest_color
 
+
 def post_processing(img_shape, all_boxes, all_scores, indices):
     indices = indices.astype(int)
 
@@ -238,7 +240,8 @@ def recognize_from_image(filename, detector):
             print(f"Detected: {item_name}, Color: {color_name}")
 
             # Save cropped image
-            cropped_image_path = os.path.join("Images", f"cropped_{item_name}_{color_name}.png")
+            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            cropped_image_path = os.path.join("Images", f"cropped_{item_name}_{color_name}_{timestamp}.png" )
             cv2.imwrite(cropped_image_path, bbox_img)
 
             # Insert into the database, including the image
