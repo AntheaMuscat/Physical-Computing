@@ -147,7 +147,13 @@ class SimpleCameraApp:
 
         # Camera feed
         self.img_label = tk.Label(right_frame)
-        self.img_label.pack()
+        self.img_label.pack() 
+        self.add_button = Button(right_frame, text="Add Item", command=self.start_capture_timer)
+        self.add_button.pack()
+
+        self.remove_button = Button(right_frame, text="Remove Item", command=self.remove_selected_item) 
+        self.remove_button.pack()
+
 
         # Humidity label below camera feed
         self.humidity_label = Label(right_frame, text="Humidity: -", font=("Arial", 14))
